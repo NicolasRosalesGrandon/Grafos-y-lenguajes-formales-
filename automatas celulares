@@ -1,0 +1,146 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from matplotlib.widgets import Button
+
+# ------------------------------
+# Solicitar al usuario el tamaño del autómata
+try:
+    tamaño = int(input("Ingrese el tamaño de la cuadrícula (por ejemplo 50): "))
+    if tamaño <= 0:
+        raise ValueError
+except ValueError:
+    tamaño = 50
+    print("Entrada inválida. Usando tamaño por defecto = 50.")
+
+# ------------------------------
+# Modos de patrón inicial
+modos = {
+    "aleatorio": lambda: np.random.choice([0, 1, 2, 3], size=(tamaño, tamaño)),
+    "rayas": lambda: np.array([[i % 4 for i in range(tamaño)] for _ in range(tamaño)]),
+    "bloques": lambda: np.fromfunction(lambda i, j: (i % 2) * 2 + (j % 2), (tamaño, tamaño), dtype=int)
+}
+
+# ------------------------------
+# Paletas de color
+paletas = [
+    {0: (1, 1, 1), 1: (1, 0.5, 0), 2: (0, 1, 0), 3: (0, 0, 1)}, # Paleta original (0: blanco)
+    {0: (0.8, 0.1, 0.1), 1: (0.9, 0.7, 0.2), 2: (0.2, 0.9, 0.7), 3: (0.6, 0.3, 0.9)} # Paleta alternativa (0: rojo oscuro)
+]
+
+# ------------------------------
+# Variables de estado
+patron_actual = "aleatorio"
+bosque = modos[patron_actual]()
+paleta_actual = 0
+regla_actual = "aleatoria"
+
+# ------------------------------
+# Función de transición de estados
+def actualizar(frame):
+    global bosque
+    nueva = bosque.copy()
+    for i in range(tamaño):
+        for j in range(tamaño):
+            vecinos = [
+                bosque[(i-1)%tamaño, j],
+                bosque[(i+1)%tamaño, j],
+                bosque[i, (j-1)%tamaño],
+                bosque[i, (j+1)%tamaño]
+            ]
+            
+            if regla_actual == "aleatoria":
+                nueva[i, j] = np.random.choice(vecinos)
+            elif regla_actual == "mayoritaria":
+                valores, conteos = np.unique(vecinos, return_counts=True)
+                nueva[i, j] = valores[np.argmax(conteos)]
+            elif regla_actual == "promedio":
+                # NUEVA LÓGICA: Regla de Conteo por Mayoría Específica
+                valores, conteos = np.unique(vecinos, return_counts=True)
+                
+                # Buscar si algún estado tiene 3 o 4 vecinos (mayoría clara)
+                mayoria_encontrada = False
+                for val, count in zip(valores, conteos):
+                    if count >= 3: # Si un estado tiene 3 o 4 vecinos
+                        nueva[i, j] = (val + 1) % 4 # Cambia al siguiente estado modular
+                        mayoria_encontrada = True
+                        break # Ya encontramos una mayoría, no necesitamos revisar más
+                
+                if not mayoria_encontrada:
+                    # Si no hay una mayoría clara de 3 o 4 vecinos, se mantiene el estado actual
+                    nueva[i, j] = bosque[i, j] 
+
+    bosque = nueva
+    img.set_data(np.array([[paletas[paleta_actual][val] for val in row] for row in bosque]))
+    return [img]
+
+# ------------------------------
+# Cambiar patrón inicial
+def cambiar_patron(patron):
+    global bosque, patron_actual
+    patron_actual = patron
+    bosque = modos[patron]()
+    print(f"Patrón cambiado a: {patron}")
+
+# ------------------------------
+# Cambiar paleta de colores
+def cambiar_paleta():
+    global paleta_actual
+    paleta_actual = (paleta_actual + 1) % len(paletas)
+    print(f"Paleta cambiada a: {paleta_actual}")
+
+# ------------------------------
+# Cambiar regla de transición
+def cambiar_regla():
+    global regla_actual
+    reglas = ["aleatoria", "mayoritaria", "promedio"]
+    indice = reglas.index(regla_actual)
+    regla_actual = reglas[(indice + 1) % len(reglas)]
+    print(f"Regla actual: {regla_actual}")
+
+# ------------------------------
+# Crear visualización
+fig, ax = plt.subplots()
+plt.subplots_adjust(bottom=0.2)
+
+img = ax.imshow(
+    np.array([[paletas[paleta_actual][val] for val in row] for row in bosque]),
+    interpolation='none'  # Sin suavizado entre celdas
+)
+ax.axis('off')
+
+# Títulos
+fig.suptitle("Autómata Celular Estético", fontsize=14, y=0.97)
+ax.set_title("Teclas: [1] aleatorio, [2] rayas, [3] bloques – 'r' cambiar paleta – 't' cambiar regla", fontsize=9)
+
+# ------------------------------
+# Control por teclado
+def presionar_tecla(event):
+    if event.key == 'r':
+        cambiar_paleta()
+    elif event.key == '1':
+        cambiar_patron("aleatorio")
+    elif event.key == '2':
+        cambiar_patron("rayas")
+    elif event.key == '3':
+        cambiar_patron("bloques")
+    elif event.key == 't':
+        cambiar_regla()
+
+fig.canvas.mpl_connect('key_press_event', presionar_tecla)
+
+# ------------------------------
+# Botón de reinicio
+ax_reset = plt.axes([0.4, 0.05, 0.2, 0.075])
+boton_reset = Button(ax_reset, 'Reiniciar')
+
+def reiniciar(event):
+    cambiar_patron(patron_actual)
+
+boton_reset.on_clicked(reiniciar)
+
+# ------------------------------
+# Crear animación
+ani = animation.FuncAnimation(fig, actualizar, frames=1000, interval=200, blit=True)
+
+plt.show()
